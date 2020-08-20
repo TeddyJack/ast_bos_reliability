@@ -21,9 +21,9 @@ module ast_bos_reliability (
   
   output rst,
   output stby,
-  output clk,
-  output shp,
-  output shd,
+  output reg clk,
+  output reg shp,
+  output reg shd,
   output hd,
   output vd,
   output clpdm,
@@ -46,7 +46,6 @@ assign rm_red[10:1] = /*dac_value[9:0]*/10'b0;
 
 assign n_ldac = 1'b1; // autoupdate is used
 assign n_reset = 1'b1;
-assign clk = clk_in;
 assign hd = 1'b0;
 assign vd = 1'b0;
 assign clpdm = 1'b1;
@@ -66,11 +65,12 @@ reg [31:0] counter;
 wire trigger = (counter == CNT_LIMIT);
 reg spi_ena;
 reg [15:0] dac_value;
+reg [15:0] increment;
 //reg right_shift;
 wire [23:0] spi_data;
 wire init_done;
 wire n_rst_fpga = reset_button;
-//wire [15:0] black_level = 16'd32767;
+wire [15:0] black_level = 16'd32767;
 
 
 assign spi_data[23:20] = 4'b0011;
@@ -82,50 +82,76 @@ assign spi_data[3:0] = 4'b0;
 
 always @ (posedge sys_clk or negedge n_rst_fpga)
   if (!n_rst_fpga)
+    begin
     counter <= 0;
-  else if (init_done)
-    begin
-    if (trigger)
-      counter <= 0;
-    else
-      counter <= counter + 1'b1;
-    end
-
-
-always @ (posedge sys_clk or negedge n_rst_fpga)
-  if (!n_rst_fpga)
-    begin
-    spi_ena <= 0;
-    dac_value <= /*11'd1*/1'b0;
+    increment <= /*11'd1*/1'b0;
     //right_shift <= 0;
     end
   else if (init_done)
     begin
     if (trigger)
       begin
-      spi_ena <= 1;
-      dac_value <= dac_value + 1'b1;
+      counter <= 0;
+      increment <= increment + 1'b1;
       //if (right_shift)
       //  begin
-      //  if (dac_value[0]) right_shift <= 0;
-      //  else dac_value <= dac_value >> 1;
+      //  if (increment[0]) right_shift <= 0;
+      //  else increment <= increment >> 1;
       //  end
       //else
       //  begin
-      //  if (dac_value[11]) right_shift <= 1;
-      //  else dac_value <= dac_value << 1;
+      //  if (increment[11]) right_shift <= 1;
+      //  else increment <= increment << 1;
       //  end
       end
     else
-      spi_ena <= 0;
+      counter <= counter + 1'b1;
     end
 
-// delay OUTPUT_UPDATE signal till the end of pause!!!!
+
+reg [7:0] cnt;
+localparam [7:0] DAC_CNT_LIMIT = 60;
+
+always @ (posedge sys_clk or negedge n_rst_fpga)
+  if (!n_rst_fpga)
+    begin
+    cnt <= 0;
+    shp <= 1;
+    shd <= 1;
+    clk <= 0;
+    spi_ena <= 0;
+    end
+  else if (init_done)
+    begin
+    if (cnt == DAC_CNT_LIMIT - 1'b1)
+      cnt <= 0;
+    else
+      cnt <= cnt + 1'b1;
+    
+    if ((cnt == 0) | (cnt == DAC_CNT_LIMIT / 2)) clk <= ~clk;
+    
+    if ((cnt == DAC_CNT_LIMIT * 1 / 8) | (cnt == DAC_CNT_LIMIT * 3 / 8)) shp <= ~shp;
+
+    if ((cnt == DAC_CNT_LIMIT * 5 / 8) | (cnt == DAC_CNT_LIMIT * 7 / 8)) shd <= ~shd;
+    
+    if (cnt == DAC_CNT_LIMIT * 1 / 8)
+      dac_value <= increment;
+    else if (cnt == DAC_CNT_LIMIT * 5 / 8)
+      dac_value <= black_level;
+    
+    if ((cnt == DAC_CNT_LIMIT * 5 / 8) | (cnt == DAC_CNT_LIMIT * 1 / 8))
+      spi_ena <= 1;
+    else
+      spi_ena <= 0;
+      
+    end
+
+
 spi_master_reg #(
-  .CPOL (1),    // according to waveforms, CPOL = 1, CPHA = 1
+  .CPOL (1),
   .CPHA (1),
   .WIDTH (24),
-  .PAUSE (5),  // if in_ena is continuing, pause will be + 1; if (in_ena <= !busy), pause will be + 2
+  .PAUSE (3),  // if in_ena is continuing, pause will be + 1; if (in_ena <= !busy), pause will be + 2
   .BIDIR (0),
   .SCLK_CONST (0)
 )
@@ -146,8 +172,6 @@ spi_dac (
 pll_main pll_main (
   .inclk0 (clk_in), // also BOS clk
   .c0 (/*sys_clk*/),    // also SPI clk
-  .c1 (shp),
-  .c2 (shd),
   .locked (/*n_rst_fpga*/)
 );
 
