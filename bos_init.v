@@ -1,5 +1,5 @@
 module bos_init #(
-  parameter F_CLK = 16000000,
+  parameter F_CLK = 4000000,
   parameter DELAY_MS = 1
 )(
   input n_rst,
@@ -13,7 +13,7 @@ module bos_init #(
   output init_done
 );
 
-localparam CNT_LIMIT = /*F_CLK * DELAY_MS / 1000 - 1*/99; // change to 99 for cozy debugging
+localparam CNT_LIMIT = F_CLK * DELAY_MS / 1000 - 1/*99*/; // change to 99 for cozy debugging
 
 wire n_cs;
 reg [31:0] cnt_warm_up;
@@ -69,11 +69,12 @@ always @ (posedge clk or negedge n_rst)
 
 
 spi_master_reg #(
-  .CPOL (1),
-  .CPHA (1),
+  .CPOL (0),
+  .CPHA (0),
   .WIDTH (24),
   .PAUSE (6),  // if in_ena is continuing, pause will be + 1; if (in_ena <= !busy), pause will be + 2
-  .BIDIR (0)
+  .BIDIR (0),
+  .SCLK_CONST (1)
   //.SWAP_DIR_BIT_NUM (7)
 )
 spi_bos (

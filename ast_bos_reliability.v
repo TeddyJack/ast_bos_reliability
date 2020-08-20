@@ -3,6 +3,7 @@
 
 module ast_bos_reliability (
   input clk_in, // 4 MHz
+  input reset_button,
   
   output [10:1] rm_green, // if video spi data is okay, light leds green
   output [10:1] rm_red,
@@ -40,28 +41,37 @@ module ast_bos_reliability (
   output my_init_done
 );
 
+assign rm_green[10:1] = /*dac_value[9:0]*/10'b0;
+assign rm_red[10:1] = /*dac_value[9:0]*/10'b0;
+
 assign n_ldac = 1'b1; // autoupdate is used
+assign n_reset = 1'b1;
 assign clk = clk_in;
 assign hd = 1'b0;
 assign vd = 1'b0;
 assign clpdm = 1'b1;
 assign clpob = 1'b1;
 assign pblk = 1'b1;
+assign rst = 1'b1;
+assign stby = 1'b0;
 
 
-localparam F_CLK = 16000000;  // the same value must be in PLL and in .sdc
-localparam F_LED_x_2 = 25;
+localparam F_CLK = 4000000;  // the same value must be in PLL and in .sdc
+localparam F_LED_x_2 = 2000;
 // change CNT_LIMIT to 99 for cozy debugging
-localparam CNT_LIMIT = /*F_CLK / F_LED_x_2 - 1*/99; // (F_LED_x_2) because we should change data twice per period
+localparam CNT_LIMIT = F_CLK / F_LED_x_2 - 1/*99*/; // (F_LED_x_2) because we should change data twice per period
 
-wire sys_clk;
+wire sys_clk = clk_in;
 reg [31:0] counter;
 wire trigger = (counter == CNT_LIMIT);
 reg spi_ena;
 reg [15:0] dac_value;
+//reg right_shift;
 wire [23:0] spi_data;
 wire init_done;
-wire n_rst_fpga;
+wire n_rst_fpga = reset_button;
+//wire [15:0] black_level = 16'd32767;
+
 
 assign spi_data[23:20] = 4'b0011;
 assign spi_data[19:4] = dac_value;
@@ -86,7 +96,8 @@ always @ (posedge sys_clk or negedge n_rst_fpga)
   if (!n_rst_fpga)
     begin
     spi_ena <= 0;
-    dac_value <= 0;
+    dac_value <= /*11'd1*/1'b0;
+    //right_shift <= 0;
     end
   else if (init_done)
     begin
@@ -94,6 +105,16 @@ always @ (posedge sys_clk or negedge n_rst_fpga)
       begin
       spi_ena <= 1;
       dac_value <= dac_value + 1'b1;
+      //if (right_shift)
+      //  begin
+      //  if (dac_value[0]) right_shift <= 0;
+      //  else dac_value <= dac_value >> 1;
+      //  end
+      //else
+      //  begin
+      //  if (dac_value[11]) right_shift <= 1;
+      //  else dac_value <= dac_value << 1;
+      //  end
       end
     else
       spi_ena <= 0;
@@ -101,11 +122,12 @@ always @ (posedge sys_clk or negedge n_rst_fpga)
 
 // delay OUTPUT_UPDATE signal till the end of pause!!!!
 spi_master_reg #(
-  .CPOL (1),
+  .CPOL (1),    // according to waveforms, CPOL = 1, CPHA = 1
   .CPHA (1),
   .WIDTH (24),
-  .PAUSE (6),  // if in_ena is continuing, pause will be + 1; if (in_ena <= !busy), pause will be + 2
-  .BIDIR (0)
+  .PAUSE (5),  // if in_ena is continuing, pause will be + 1; if (in_ena <= !busy), pause will be + 2
+  .BIDIR (0),
+  .SCLK_CONST (0)
 )
 spi_dac (
   .n_rst (n_rst_fpga),
@@ -116,23 +138,22 @@ spi_dac (
   .n_cs (n_sync),
   
   .in_data (spi_data),
-  .in_ena (spi_ena),
-  .busy ()
+  .in_ena (spi_ena)
 );
 
 
 
 pll_main pll_main (
   .inclk0 (clk_in), // also BOS clk
-  .c0 (sys_clk),    // also SPI clk
+  .c0 (/*sys_clk*/),    // also SPI clk
   .c1 (shp),
   .c2 (shd),
-  .locked (n_rst_fpga)
+  .locked (/*n_rst_fpga*/)
 );
 
 bos_init #(
   .F_CLK (F_CLK),
-  .DELAY_MS (1) // don't forget to uncomment inside
+  .DELAY_MS (50) // don't forget to uncomment inside
 )
 bos_init (
   .n_rst (n_rst_fpga),

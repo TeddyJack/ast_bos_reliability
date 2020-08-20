@@ -37,6 +37,8 @@ wire mosi_int = mosi_reg[WIDTH-1];
 wire load_cond = !busy & in_ena;
 wire eoframe_cond = (bit_cnt == WIDTH - 1'b1);
 assign n_cs = n_cs_neg & n_cs_pha;
+reg io_update_reg;
+assign io_update = io_update_reg;
 
 generate
   if(SCLK_CONST)
@@ -71,6 +73,7 @@ generate
         mosi_reg <= 0;
         pause_cnt <= 0;
         busy <= 0;
+        io_update_reg <= 0;
         end
       else
         begin
@@ -83,6 +86,7 @@ generate
           begin
           n_cs_pha <= !load_cond;
           bit_cnt <= 0;
+          io_update_reg <= (pause_cnt == PAUSE - 2'd2);
           end
         else
           begin
@@ -128,6 +132,7 @@ generate
         mosi_reg <= 0;
         pause_cnt <= 0;
         busy <= 0;
+        io_update_reg <= 0;
         end
       else
         begin
@@ -140,6 +145,7 @@ generate
           begin
           n_cs_pha <= !load_cond;
           bit_cnt <= 0;
+          io_update_reg <= (pause_cnt == PAUSE - 2'd2);
           end
         else
           begin
@@ -185,14 +191,14 @@ generate
     begin
     reg read;
     reg [7:0] z_cnt;
-    reg io_update_reg;
+    //reg io_update_reg;
     //wire high_z = read & (z_cnt > SWAP_DIR_BIT_NUM);
     reg high_z;
    
     assign sdio = high_z ? 1'bz : mosi_int;
     assign miso_int = sdio;
     assign mosi = 0;
-    assign io_update = io_update_reg;
+    //assign io_update = io_update_reg;
 
     if (CPOL == CPHA)
       always @ (negedge sys_clk or negedge n_rst)
@@ -200,7 +206,7 @@ generate
           begin
           z_cnt <= 0;
           read <= 0;
-          io_update_reg <= 0;
+          //io_update_reg <= 0;
           high_z <= 0;
           end
         else
@@ -208,13 +214,13 @@ generate
             begin
             z_cnt <= 0;
             read <= 0;
-            io_update_reg <= 0;
+            //io_update_reg <= 0;
             high_z <= 0;
             end
           else
             begin
             z_cnt <= z_cnt + 1'b1;
-            io_update_reg <= eoframe_cond & !read;
+            //io_update_reg <= eoframe_cond & !read;
             if (z_cnt == 1'b0)
               read <= mosi_int;
             if ((z_cnt == SWAP_DIR_BIT_NUM) & read)
@@ -226,7 +232,7 @@ generate
           begin
           z_cnt <= 0;
           read <= 0;
-          io_update_reg <= 0;
+          //io_update_reg <= 0;
           high_z <= 0;
           end
         else
@@ -234,13 +240,13 @@ generate
             begin
             z_cnt <= 0;
             read <= 0;
-            io_update_reg <= 0;
+            //io_update_reg <= 0;
             high_z <= 0;
             end
           else
             begin
             z_cnt <= z_cnt + 1'b1;
-            io_update_reg <= eoframe_cond & !read;
+            //io_update_reg <= eoframe_cond & !read;
             if (z_cnt == 1'b0)
               read <= mosi_int;
             if ((z_cnt == SWAP_DIR_BIT_NUM) & read)
@@ -251,7 +257,7 @@ generate
     begin
     assign mosi = mosi_int;
     assign miso_int = miso;
-    assign io_update = 0;
+    //assign io_update = 0;
     end
 endgenerate
 
