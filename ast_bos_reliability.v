@@ -3,7 +3,7 @@
 
 module ast_bos_reliability (
   input clk_in, // 4 MHz
-  input reset_button,
+  input rst,
   
   output [10:1] rm_green, // if video spi data is okay, light leds green
   output [10:1] rm_red,
@@ -18,8 +18,7 @@ module ast_bos_reliability (
   output sdatai,
   output sck,
   output [10:1] sl,
-  
-  output rst,
+    
   output stby,
   output reg clk,
   output reg shp,
@@ -35,14 +34,17 @@ module ast_bos_reliability (
   output sclk,
   output n_sync,
   output n_reset,
-  output n_ldac,  // same as output_update
-  
-  output my_sys_clk,
-  output my_init_done
+  output n_ldac  // same as output_update
 );
 
-assign rm_green[10:1] = /*dac_value[9:0]*/10'b0;
-assign rm_red[10:1] = /*dac_value[9:0]*/10'b0;
+assign rm_green[10:1] = 10'b0;
+//assign rm_red[10:1] = increment[15:6];  // straight order
+genvar i;
+generate for (i = 1; i <= 10; i = i + 1)
+  begin: bit_reverse
+  assign rm_red[i] = increment[16 - i];
+  end
+endgenerate
 
 assign n_ldac = 1'b1; // autoupdate is used
 assign n_reset = 1'b1;
@@ -51,12 +53,13 @@ assign vd = 1'b0;
 assign clpdm = 1'b1;
 assign clpob = 1'b1;
 assign pblk = 1'b1;
-assign rst = 1'b1;
 assign stby = 1'b0;
+assign sckv = 1'b0;
+assign slv = 1'b0;
 
 
 localparam F_CLK = 4000000;  // the same value must be in PLL and in .sdc
-localparam F_LED_x_2 = 2000;
+localparam F_LED_x_2 = 1;
 // change CNT_LIMIT to 99 for cozy debugging
 localparam CNT_LIMIT = F_CLK / F_LED_x_2 - 1/*99*/; // (F_LED_x_2) because we should change data twice per period
 
@@ -66,10 +69,9 @@ wire trigger = (counter == CNT_LIMIT);
 reg spi_ena;
 reg [15:0] dac_value;
 reg [15:0] increment;
-//reg right_shift;
 wire [23:0] spi_data;
 wire init_done;
-wire n_rst_fpga = reset_button;
+wire n_rst_fpga = rst;
 wire [15:0] black_level = 16'd32767;
 
 
@@ -84,25 +86,15 @@ always @ (posedge sys_clk or negedge n_rst_fpga)
   if (!n_rst_fpga)
     begin
     counter <= 0;
-    increment <= /*11'd1*/1'b0;
-    //right_shift <= 0;
+    increment <= 16'd0;
     end
   else if (init_done)
     begin
     if (trigger)
       begin
       counter <= 0;
-      increment <= increment + 1'b1;
-      //if (right_shift)
-      //  begin
-      //  if (increment[0]) right_shift <= 0;
-      //  else increment <= increment >> 1;
-      //  end
-      //else
-      //  begin
-      //  if (increment[11]) right_shift <= 1;
-      //  else increment <= increment << 1;
-      //  end
+      increment <= increment + 16'd4096;
+
       end
     else
       counter <= counter + 1'b1;
@@ -110,7 +102,7 @@ always @ (posedge sys_clk or negedge n_rst_fpga)
 
 
 reg [7:0] cnt;
-localparam [7:0] DAC_CNT_LIMIT = 60;
+localparam [7:0] DAC_CNT_LIMIT = 64;
 
 always @ (posedge sys_clk or negedge n_rst_fpga)
   if (!n_rst_fpga)
@@ -130,16 +122,16 @@ always @ (posedge sys_clk or negedge n_rst_fpga)
     
     if ((cnt == 0) | (cnt == DAC_CNT_LIMIT / 2)) clk <= ~clk;
     
-    if ((cnt == DAC_CNT_LIMIT * 1 / 8) | (cnt == DAC_CNT_LIMIT * 3 / 8)) shp <= ~shp;
+    if ((cnt == DAC_CNT_LIMIT * 2 / 8) | (cnt == DAC_CNT_LIMIT * 3 / 8)) shp <= ~shp;
 
-    if ((cnt == DAC_CNT_LIMIT * 5 / 8) | (cnt == DAC_CNT_LIMIT * 7 / 8)) shd <= ~shd;
+    if ((cnt == DAC_CNT_LIMIT * 6 / 8) | (cnt == DAC_CNT_LIMIT * 7 / 8)) shd <= ~shd;
     
-    if (cnt == DAC_CNT_LIMIT * 1 / 8)
+    if (cnt == DAC_CNT_LIMIT * 0 / 8)
       dac_value <= increment;
-    else if (cnt == DAC_CNT_LIMIT * 5 / 8)
+    else if (cnt == DAC_CNT_LIMIT * 4 / 8)
       dac_value <= black_level;
     
-    if ((cnt == DAC_CNT_LIMIT * 5 / 8) | (cnt == DAC_CNT_LIMIT * 1 / 8))
+    if ((cnt == DAC_CNT_LIMIT * 4 / 8) | (cnt == DAC_CNT_LIMIT * 0 / 8))
       spi_ena <= 1;
     else
       spi_ena <= 0;
@@ -169,12 +161,6 @@ spi_dac (
 
 
 
-pll_main pll_main (
-  .inclk0 (clk_in), // also BOS clk
-  .c0 (/*sys_clk*/),    // also SPI clk
-  .locked (/*n_rst_fpga*/)
-);
-
 bos_init #(
   .F_CLK (F_CLK),
   .DELAY_MS (50) // don't forget to uncomment inside
@@ -189,7 +175,5 @@ bos_init (
   .init_done (init_done)
 );
 
-assign my_sys_clk = sys_clk;
-assign my_init_done = init_done;
 
 endmodule
